@@ -15,13 +15,13 @@ include stars.inc
 
 .DATA
 
-	;; If you need to, you can place global variables here
+    ;; If you need to, you can place global variables here
 
 .CODE
 
 DrawStarField proc
 
-	;; Place your code here
+    ;; Place your code here
       invoke DrawStar, 150, 200 ;; draws a single star at location (150, 200)
       invoke DrawStar, 23, 430
       invoke DrawStar, 345, 434
@@ -38,7 +38,7 @@ DrawStarField proc
       invoke DrawStar, 281, 167
       invoke DrawStar, 588, 128
       invoke DrawStar, 66, 11
-	ret  			; Careful! Don't remove this line
+    ret             ; Careful! Don't remove this line
 DrawStarField endp
 
 
