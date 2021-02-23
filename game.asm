@@ -154,26 +154,15 @@ noMouse:
 	ret
 HandleControls ENDP
 
-BlankScreen PROC USES ebx ecx
+BlankScreen PROC USES ecx edi
 	
 	; this procedure essentially resets the screen's canvas, draws a 640x480
 	; black rectangle to represent the background
 
-	mov ecx, 0							; to be used for y coords
-	jmp outer
-doOuter:
-	mov ebx, 0							; to be used for x coords
-	jmp inner
-doInner:
-	INVOKE DrawPixel, ebx, ecx, 0		; draw black pixels
-	inc ebx							
-inner:
-	cmp ebx, 640						; check if done with all 640 columns
-	jl doInner							; if not done, go start next column
-	inc ecx								; done with all columns in row
-outer:
-	cmp ecx, 480						; check if done with all 480 rows
-	jl doOuter							; if not done, go start next row
+	mov eax, 0					; pixel value to write
+	mov ecx, 640*480			; number of pixels to zero out
+	mov edi, ScreenBitsPtr		; destination array
+	rep stosb					; repeat store string instruction
 
 	ret
 BlankScreen ENDP
