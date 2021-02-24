@@ -37,7 +37,7 @@ GamePlay PROTO
 CheckIntersect PROTO oneX:DWORD, oneY:DWORD, oneBitmap:PTR EECS205BITMAP, twoX:DWORD, twoY:DWORD, twoBitmap:PTR EECS205BITMAP 
 
 ;; User Definitions
-Sprite STRUCT
+SPRITE STRUCT
  xPos	DWORD ?
  yPos	DWORD ?
  xVel	FXPT  0
@@ -45,9 +45,10 @@ Sprite STRUCT
  xAcc	FXPT  0
  yAcc	FXPT  0
  angle	FXPT  0
+ rVel	FXPT  0
  state	DWORD ?
  bitmap	DWORD ?
-Sprite ENDS
+SPRITE ENDS
 
 
 

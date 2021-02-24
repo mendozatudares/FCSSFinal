@@ -26,8 +26,8 @@ include bitmaps.inc
 .DATA
 
 ;; If you need to, you can place global variables here
-    Asteroid Sprite <250, 250,,,,, 0,>      ;; asteroid sprite
-    Player Sprite <300, 300,,,,, 0,>        ;; player sprite
+    Asteroid SPRITE <250, 250,,,,,010000h, 0,>      ;; asteroid sprite
+    Player SPRITE <300, 300,,,,,, 0,>        ;; player sprite
 
     PlayerAnimation DWORD ?, ?, ?           ;; array for player animation
     AnimationFrame BYTE 0
@@ -35,6 +35,12 @@ include bitmaps.inc
     GameState BYTE 0
     SinceChange DWORD 0
 .CODE
+
+UpdateAsteroids PROC
+
+    
+    ret
+UpdateAsteroids ENDP
 
 UpdatePlayerAnimation PROC USES ebx
 
@@ -112,7 +118,31 @@ Fire PROC
     ret
 Fire ENDP
 
-HandleControl PROC
+HandleOutOfBounds PROC sprite:PTR SPRITE
+
+    mov eax, sprite
+    cmp (SPRITE PTR [eax]).xPos, 640
+    jl checkX
+    mov (SPRITE PTR [eax]).xPos, 0
+checkX:
+    cmp (SPRITE PTR [eax]).xPos, 0
+    jge checkY
+    mov (SPRITE PTR [eax]).xPos, 640
+
+checkY:
+    cmp (SPRITE PTR [eax]).yPos, 480
+    jl _checkY
+    mov (SPRITE PTR [eax]).yPos, 0
+_checkY:
+    cmp (SPRITE PTR [eax]).yPos, 0
+    jge return
+    mov (SPRITE PTR [eax]).yPos, 480
+
+return:
+    ret
+HandleOutOfBounds ENDP
+
+HandleControls PROC
 
     cmp KeyPress, VK_W          ;; check if w key was pressed
     je up
@@ -121,8 +151,23 @@ HandleControl PROC
     cmp KeyPress, VK_D          ;; check if d key was pressed
     je right
     cmp KeyPress, VK_S          ;; check if s key was pressed
+    je down
+    cmp KeyPress, VK_LEFT       ;; check if left arrow key was pressed
+    je leftRot
+    cmp KeyPress, VK_RIGHT      ;; check if right arrow key was pressed
+    je rightRot
+    cmp KeyPress, VK_SPACE      ;; check if space was pressed
     jne update
+    INVOKE Fire
+    jmp update
 
+rightRot:
+    add Player.angle, 0fffh     ;; if right arrow key was pressed, subtract from player's r velocity
+    jmp update
+leftRot:
+    sub Player.angle, 0fffh     ;; if left arrow key was pressed, add to player's r velocity
+    jmp update
+down:
     add Player.yVel, 0f000h     ;; if s was pressed, add to player's y velocity
     jmp update
 up:
@@ -139,18 +184,15 @@ update:
     adc eax, 7fffh
     sar eax, 16                 ;; round player's x velocity to nearest whole number
     add Player.xPos, eax        ;; add rounded x velocity to player's x position
-    
+
     mov eax, Player.yVel
     adc eax, 7fffh
     sar eax, 16                 ;; round player's y velocity to nearest whole number
     add Player.yPos, eax        ;; add rounded y velocity to player's y position
 
-mouse:
-    cmp MouseStatus.buttons, MK_LBUTTON
-    jne noMouse
-    INVOKE Fire
+    lea eax, Player
+    INVOKE HandleOutOfBounds, eax
 
-noMouse:
     ret
 HandleControls ENDP
 
@@ -194,14 +236,18 @@ GamePlay PROC
     INVOKE DrawStarField                ;; draw stars for background
 
     INVOKE HandleControls               ;; handle any input from user
+    INVOKE UpdatePlayerAnimation
+    INVOKE UpdateAsteroids
+
     INVOKE CheckIntersect, Player.xPos, Player.yPos, Player.bitmap, Asteroid.xPos, Asteroid.yPos, Asteroid.bitmap
-    INVOKE UpdatePlayerAnimation        ;; if intersection occured, run player animation
+    test eax, eax
+    jne sprites
+    INVOKE HandleEnd
 
 sprites:                                ;; draw basic Asteroid and Player sprites
-    INVOKE BasicBlit, Asteroid.bitmap, Asteroid.xPos, Asteroid.yPos
-    INVOKE BasicBlit, Player.bitmap, Player.xPos, Player.yPos
+    INVOKE RotateBlit, Asteroid.bitmap, Asteroid.xPos, Asteroid.yPos, Asteroid.angle
+    INVOKE RotateBlit, Player.bitmap, Player.xPos, Player.yPos, Player.angle
 
-done:
     ret         ;; Do not delete this line!!!
 GamePlay ENDP
 
