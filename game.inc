@@ -38,15 +38,13 @@ CheckIntersect PROTO oneX:DWORD, oneY:DWORD, oneBitmap:PTR EECS205BITMAP, twoX:D
 
 ;; User Definitions
 SPRITE STRUCT
- xPos	DWORD ?
- yPos	DWORD ?
+ xPos	DWORD 0
+ yPos	DWORD 0
  xVel	FXPT  0
  yVel	FXPT  0
- xAcc	FXPT  0
- yAcc	FXPT  0
  angle	FXPT  0
  rVel	FXPT  0
- state	DWORD ?
+ state	DWORD 0
  bitmap	DWORD ?
 SPRITE ENDS
 
