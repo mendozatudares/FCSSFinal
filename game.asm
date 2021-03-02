@@ -34,23 +34,28 @@ include bitmaps.inc
     AnimationFrame BYTE 0
 
     ;; asteroid initialization
-    AsteroidSpeed = 1000h
+    AsteroidSpeed = 400h
     Asteroids SPRITE <430, 67,  51471/2,,, 1000h,, OFFSET asteroid_000>,
                      <75,  212, 51471,,,   2000h,, OFFSET asteroid_000>,
                      <3,   254, 51471*2,,, 1000h,, OFFSET asteroid_000>,
-                     <374, 304, 51471*3,,, 1000h,, OFFSET asteroid_000>
+                     <480, 304, 51471*3,,, 1000h,, OFFSET asteroid_000>
 
     ;; missiles initialization
     PI_HALF = 102943                ;;  PI / 2
     MissileSpeed = 100000h
-    Missiles SPRITE 16 DUP(<-1, -1,,,,, 1, OFFSET nuke_000>)
+    Missiles SPRITE 16 DUP(<-100, -100,,,,, 1, OFFSET nuke_000>)
 
     ;; game state initialization
     KeyWait = 4
-    GameState DWORD 0
+    GameState DWORD 1
     SincePause DWORD 0
     SinceFire DWORD 0
     CurrentMissile BYTE 0
+
+    StartString BYTE "Welcome! Press P to Play", 0
+    InstrString BYTE "WASD to move, <- and -> to turn, Space to fire, P to pause", 0
+    WinnrString BYTE "YOU WIN!", 0
+    LoserString BYTE "GAME OVER", 0
 
 .CODE
 
@@ -66,25 +71,6 @@ BlankScreen PROC USES ecx edi
     ret
 BlankScreen ENDP
 
-UpdatePlayerAnimation PROC USES ebx
-
-    ;; this procedure sets the next frame in the player's animation
-    ;; cycles through the bitmaps in PlayerAnimation
-
-    movzx eax, AnimationFrame               ;; get the current frame number
-    inc eax                                 ;; set the next frame number
-    cmp eax, 6                              ;; 6 = 2 * LENGTHOF PlayerAnimation (for 0.5x speed)
-    jl updateFrame                          ;; if next frame number in range, update
-    mov eax, 0                              ;; if out of range, set to 0
-updateFrame:
-    mov AnimationFrame, al                  ;; store the next frame number
-    shr al, 1                               ;; next frame number / 2 (for 0.5x speed)
-    mov ebx, OFFSET PlayerAnimation         ;; load address for PlayerAnimation array
-    mov eax, [ebx + eax * 4]                ;; get address for next player bitmap
-    mov Player.bitmap, eax                  ;; update Player.bitmap to hold next bitmap
-    
-    ret
-UpdatePlayerAnimation ENDP
 
 HandlePause PROC
 
@@ -101,8 +87,36 @@ returnPause:
 HandlePause ENDP
 
 HandleWin PROC
+
+    xor ecx, ecx
+    mov edi, OFFSET Asteroids
+    jmp cond
+do:
+    lea eax, [edi + ecx]
+    cmp (SPRITE PTR [edi + ecx]).state, 0
+    je returnHandleWin
+    add ecx, SIZEOF SPRITE
+cond:
+    cmp ecx, LENGTHOF Asteroids * SIZEOF SPRITE
+    jl do
+
+    or GameState, 2
+    INVOKE DrawStr, OFFSET WinnrString, 285, 240, 255
+
+returnHandleWin:
     ret
 HandleWin ENDP
+
+HandleLose PROC
+
+    cmp Player.state, 0
+    je returnHandleLose
+    or GameState, 2
+    INVOKE DrawStr, OFFSET LoserString, 285, 240, 255
+
+returnHandleLose:
+    ret
+HandleLose ENDP
 
 HandleOutOfBounds PROC sprite:PTR SPRITE
 
@@ -127,6 +141,34 @@ _checkY:
 returnOutOfBounds:
     ret
 HandleOutOfBounds ENDP
+
+CheckOutOfBounds PROC sprite:PTR SPRITE
+
+    mov eax, sprite
+    cmp (SPRITE PTR [eax]).xPos, 640
+    jl checkX
+    jmp true
+checkX:
+    cmp (SPRITE PTR [eax]).xPos, 0
+    jge checkY
+    jmp true
+
+checkY:
+    cmp (SPRITE PTR [eax]).yPos, 480
+    jl _checkY
+    jmp true
+_checkY:
+    cmp (SPRITE PTR [eax]).yPos, 0
+    jge false
+    jmp true
+
+false:
+    mov eax, 0
+    ret
+true:
+    mov eax, 1
+    ret
+CheckOutOfBounds ENDP
 
 UpdateAsteroid PROC USES esi asteroid:PTR SPRITE
 
@@ -153,6 +195,7 @@ updateAsteroid:
     add (SPRITE PTR [esi]).angle, eax
 
     mov eax, (SPRITE PTR [esi]).xVel
+
     adc eax, 7fffh
     sar eax, 16                            ;; round asteroid's x velocity to nearest whole number
     add (SPRITE PTR [esi]).xPos, eax       ;; add rounded x velocity to asteroid's x position
@@ -172,8 +215,18 @@ UpdateAsteroids PROC USES ecx edi
     mov edi, OFFSET Asteroids
     jmp cond
 do:
+    mov eax, (SPRITE PTR [edi + ecx]).state
+    test eax, eax
+    jg incr
+
     lea eax, [edi + ecx]
     INVOKE UpdateAsteroid, eax
+
+    INVOKE RotateBlit, (SPRITE PTR [edi + ecx]).bitmap, 
+                       (SPRITE PTR [edi + ecx]).xPos, 
+                       (SPRITE PTR [edi + ecx]).yPos, 
+                       (SPRITE PTR [edi + ecx]).angle
+incr:
     add ecx, SIZEOF SPRITE
 cond:
     cmp ecx, LENGTHOF Asteroids * SIZEOF SPRITE
@@ -182,27 +235,24 @@ cond:
     ret
 UpdateAsteroids ENDP
 
-DrawAsteroids PROC USES ecx edi
-
-    xor ecx, ecx
-    mov edi, OFFSET Asteroids
-    jmp cond
-do:
-    INVOKE RotateBlit, (SPRITE PTR [edi + ecx]).bitmap, (SPRITE PTR [edi + ecx]).xPos, (SPRITE PTR [edi + ecx]).yPos, (SPRITE PTR [edi + ecx]).angle
-    add ecx, SIZEOF SPRITE
-cond:
-    cmp ecx, LENGTHOF Asteroids * SIZEOF SPRITE
-    jl do
-
-    ret
-DrawAsteroids ENDP
-
 UpdateMissiles PROC USES ecx edi
 
     xor ecx, ecx
     mov edi, OFFSET Missiles
     jmp cond
 do:
+    lea eax, [edi + ecx]
+    INVOKE CheckOutOfBounds, eax
+    test eax, eax
+    jz continue
+    mov (SPRITE PTR [edi + ecx]).state, 1
+    jmp incr
+
+continue:
+    mov eax, (SPRITE PTR [edi + ecx]).state
+    test eax, eax
+    jg incr
+
     mov eax, (SPRITE PTR [edi + ecx]).xVel
     adc eax, 7fffh
     sar eax, 16                 ;; round missile's x velocity to nearest whole number
@@ -212,6 +262,11 @@ do:
     adc eax, 7fffh
     sar eax, 16                 ;; round missile's y velocity to nearest whole number
     add (SPRITE PTR [edi + ecx]).yPos, eax        ;; add rounded y velocity to missile's x position
+
+    INVOKE BasicBlit, (SPRITE PTR [edi + ecx]).bitmap, 
+                      (SPRITE PTR [edi + ecx]).xPos,
+                      (SPRITE PTR [edi + ecx]).yPos
+incr:
     add ecx, SIZEOF SPRITE
 cond:
     cmp ecx, LENGTHOF Missiles * SIZEOF SPRITE
@@ -219,21 +274,6 @@ cond:
 
     ret
 UpdateMissiles ENDP
-
-DrawMissiles PROC USES ecx edi
-
-    xor ecx, ecx
-    mov edi, OFFSET Missiles
-    jmp cond
-do:
-    INVOKE BasicBlit, (SPRITE PTR [edi + ecx]).bitmap, (SPRITE PTR [edi + ecx]).xPos, (SPRITE PTR [edi + ecx]).yPos
-    add ecx, SIZEOF SPRITE
-cond:
-    cmp ecx, LENGTHOF Missiles * SIZEOF SPRITE
-    jl do
-
-    ret
-DrawMissiles ENDP
 
 Fire PROC USES ecx edx edi
 
@@ -267,13 +307,41 @@ Fire PROC USES ecx edx edi
     or edx, eax
     mov (SPRITE PTR [edi]).yVel, edx
 
+    mov (SPRITE PTR [edi]).state, 0
+
     add CurrentMissile, 1
     and CurrentMissile, 15
 
     ret
 Fire ENDP
 
-HandleControls PROC
+UpdatePlayerAnimation PROC USES ebx
+
+    ;; this procedure sets the next frame in the player's animation
+    ;; cycles through the bitmaps in PlayerAnimation
+
+    movzx eax, AnimationFrame               ;; get the current frame number
+    inc eax                                 ;; set the next frame number
+    cmp eax, 6                              ;; 6 = 2 * LENGTHOF PlayerAnimation (for 0.5x speed)
+    jl updateFrame                          ;; if next frame number in range, update
+    mov eax, 0                              ;; if out of range, set to 0
+updateFrame:
+    mov AnimationFrame, al                  ;; store the next frame number
+    shr al, 1                               ;; next frame number / 2 (for 0.5x speed)
+    mov ebx, OFFSET PlayerAnimation         ;; load address for PlayerAnimation array
+    mov eax, [ebx + eax * 4]                ;; get address for next player bitmap
+    mov Player.bitmap, eax                  ;; update Player.bitmap to hold next bitmap
+    
+    ret
+UpdatePlayerAnimation ENDP
+
+UpdatePlayer PROC
+
+    mov eax, Player.state
+    test eax, eax
+    jg returnUpdatePlayer
+    
+    INVOKE UpdatePlayerAnimation
 
     cmp KeyPress, VK_W          ;; check if w key was pressed
     je up
@@ -331,9 +399,14 @@ updatePlayer:
     mov eax, OFFSET Player
     INVOKE HandleOutOfBounds, eax
 
-returnControls:
+    INVOKE RotateBlit, Player.bitmap, 
+                       Player.xPos, 
+                       Player.yPos, 
+                       Player.angle
+
+returnUpdatePlayer:
     ret
-HandleControls ENDP
+UpdatePlayer ENDP
 
 ;; Note: You will need to implement CheckIntersect!!!
 CheckIntersect PROC USES ebx edi esi oneX:DWORD, oneY:DWORD, oneBitmap:PTR EECS205BITMAP, twoX:DWORD, twoY:DWORD, twoBitmap:PTR EECS205BITMAP 
@@ -385,7 +458,58 @@ impossible:
     ret
 CheckIntersect ENDP
 
-HandleIntersections PROC
+HandleIntersections PROC USES ebx ecx edx edi esi
+
+    xor ecx, ecx
+    mov edi, OFFSET Asteroids
+    jmp condOuter
+doOuter:
+    mov eax, (SPRITE PTR [edi + ecx]).state
+    test eax, eax
+    jg incrOuter
+
+    xor ebx, ebx
+    mov esi, OFFSET Missiles
+    jmp condInner
+doInner:
+    mov eax, (SPRITE PTR [esi + ebx]).state
+    test eax, eax
+    jg incrInner
+    
+    INVOKE CheckIntersect, (SPRITE PTR [edi + ecx]).xPos,
+                           (SPRITE PTR [edi + ecx]).yPos,
+                           (SPRITE PTR [edi + ecx]).bitmap,
+                           (SPRITE PTR [esi + ebx]).xPos,
+                           (SPRITE PTR [esi + ebx]).yPos,
+                           (SPRITE PTR [esi + ebx]).bitmap
+    test eax, eax
+    jz incrInner
+    mov (SPRITE PTR [edi + ecx]).state, 1
+    mov (SPRITE PTR [esi + ebx]).state, 1
+    
+incrInner:
+    add ebx, SIZEOF SPRITE
+condInner:
+    cmp ebx, LENGTHOF Missiles * SIZEOF SPRITE
+    jl doInner
+
+    INVOKE CheckIntersect, (SPRITE PTR [edi + ecx]).xPos,
+                           (SPRITE PTR [edi + ecx]).yPos,
+                           (SPRITE PTR [edi + ecx]).bitmap,
+                           Player.xPos,
+                           Player.yPos,
+                           Player.bitmap
+    test eax, eax
+    jz incrOuter
+    mov (SPRITE PTR [edi + ecx]).state, 1
+    mov Player.state, 1
+
+incrOuter:
+    add ecx, SIZEOF SPRITE
+condOuter:
+    cmp ecx, LENGTHOF Asteroids * SIZEOF SPRITE
+    jl doOuter
+
     ret
 HandleIntersections ENDP
 
@@ -393,30 +517,28 @@ HandleIntersections ENDP
 GamePlay PROC
 
     INVOKE HandlePause
-    INVOKE HandleIntersections
-    INVOKE HandleWin
-
     cmp GameState, 0
     jne returnGamePlay
 
     INVOKE BlankScreen                  ;; clear screen, prep for drawing
     INVOKE DrawStarField                ;; draw stars for background
 
-    INVOKE HandleControls               ;; handle any input from user
-    INVOKE UpdatePlayerAnimation
-    INVOKE UpdateAsteroids
-    INVOKE UpdateMissiles
+    INVOKE UpdatePlayer                 ;; update and draw player
+    INVOKE UpdateMissiles               ;; update and draw missiles
+    INVOKE UpdateAsteroids              ;; update and draw asteroids
 
-sprites:                                ;; draw Asteroid and Player sprites
-    INVOKE RotateBlit, Player.bitmap, Player.xPos, Player.yPos, Player.angle
-    INVOKE DrawAsteroids
-    INVOKE DrawMissiles
+    INVOKE HandleWin
+    INVOKE HandleLose
+    INVOKE HandleIntersections
 
 returnGamePlay:
     ret         ;; Do not delete this line!!!
 GamePlay ENDP
 
 GameInit PROC
+
+    INVOKE DrawStr, OFFSET StartString, 220, 200, 255
+    INVOKE DrawStr, OFFSET InstrString, 80, 300, 255
 
     ret         ;; Do not delete this line!!!
 GameInit ENDP
