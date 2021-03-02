@@ -22,6 +22,11 @@ include keys.inc
 ;; Has bitmaps
 include bitmaps.inc
 
+;; Has sounds
+include \masm32\include\windows.inc
+include \masm32\include\winmm.inc
+includelib \masm32\lib\winmm.lib
+
 
 .DATA
 
@@ -34,11 +39,12 @@ include bitmaps.inc
     AnimationFrame BYTE 0
 
     ;; asteroid initialization
-    AsteroidSpeed = 400h
+    AsteroidSpeed = 800h
     Asteroids SPRITE <430, 67,  51471/2,,, 1000h,, OFFSET asteroid_000>,
                      <75,  212, 51471,,,   2000h,, OFFSET asteroid_000>,
                      <3,   254, 51471*2,,, 1000h,, OFFSET asteroid_000>,
-                     <480, 304, 51471*3,,, 1000h,, OFFSET asteroid_000>
+                     <480, 304, 51471*3,,, 1000h,, OFFSET asteroid_000>,
+                     <580, 100, 51471*3,,, 1000h,, OFFSET asteroid_000>
 
     ;; missiles initialization
     PI_HALF = 102943                ;;  PI / 2
@@ -52,10 +58,14 @@ include bitmaps.inc
     SinceFire DWORD 0
     CurrentMissile BYTE 0
 
+    ;; text and sound initialization
     StartString BYTE "Welcome! Press P to Play", 0
     InstrString BYTE "WASD to move, <- and -> to turn, Space to fire, P to pause", 0
     WinnrString BYTE "YOU WIN!", 0
     LoserString BYTE "GAME OVER", 0
+    MissleSound BYTE "laser_shot_1.wav", 0
+    AsterdSound BYTE "explosion_4.wav", 0
+    PlayerSound BYTE "explosion_8.wav", 0
 
 .CODE
 
@@ -113,6 +123,7 @@ HandleLose PROC
     je returnHandleLose
     or GameState, 2
     INVOKE DrawStr, OFFSET LoserString, 285, 240, 255
+    INVOKE PlaySound, OFFSET PlayerSound, 0, SND_ASYNC
 
 returnHandleLose:
     ret
@@ -308,6 +319,7 @@ Fire PROC USES ecx edx edi
     mov (SPRITE PTR [edi]).yVel, edx
 
     mov (SPRITE PTR [edi]).state, 0
+    INVOKE PlaySound, OFFSET MissleSound, 0, SND_ASYNC
 
     add CurrentMissile, 1
     and CurrentMissile, 15
@@ -487,6 +499,7 @@ doInner:
     mov (SPRITE PTR [edi + ecx]).state, 1
     mov (SPRITE PTR [esi + ebx]).state, 1
     
+
 incrInner:
     add ebx, SIZEOF SPRITE
 condInner:
