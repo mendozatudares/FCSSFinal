@@ -40,9 +40,9 @@ CheckIntersect PROTO oneX:DWORD, oneY:DWORD, oneBitmap:PTR EECS205BITMAP, twoX:D
 SPRITE STRUCT
  xPos	DWORD 0
  yPos	DWORD 0
+ angle	FXPT  0
  xVel	FXPT  0
  yVel	FXPT  0
- angle	FXPT  0
  rVel	FXPT  0
  state	DWORD 0
  bitmap	DWORD ?

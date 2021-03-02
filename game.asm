@@ -27,27 +27,30 @@ include bitmaps.inc
 
 ;; If you need to, you can place global variables here
     ;; player initialization
-    PlayerRotation = 51471          ;; rotate by pi/4
+    PlayerSpeed = 0f000h            ;; player rotation speed
+    PlayerRotation = 51471/2        ;; rotate by pi/8
     Player SPRITE <640/2, 480/2>    ;; player sprite
     PlayerAnimation DWORD OFFSET fighter_000, OFFSET fighter_001, OFFSET fighter_002
     AnimationFrame BYTE 0
 
     ;; asteroid initialization
     AsteroidSpeed = 1000h
-    AsteroidCount = 5
-    Asteroids SPRITE <430, 67,,,,,, OFFSET asteroid_000>,
-                     <75, 212,,,,,, OFFSET asteroid_000>,
-                     <3, 254,,,,,, OFFSET asteroid_000>,
-                     <374, 304,,,,,, OFFSET asteroid_000>,
-                     <469, 439,,,,,, OFFSET asteroid_000>
-    Missiles SPRITE 10 DUP(<>)
-    CurrentMissile BYTE 0
+    Asteroids SPRITE <430, 67,  51471/2,,, 1000h,, OFFSET asteroid_000>,
+                     <75,  212, 51471,,,   2000h,, OFFSET asteroid_000>,
+                     <3,   254, 51471*2,,, 1000h,, OFFSET asteroid_000>,
+                     <374, 304, 51471*3,,, 1000h,, OFFSET asteroid_000>
+
+    ;; missiles initialization
+    PI_HALF = 102943                ;;  PI / 2
+    MissileSpeed = 100000h
+    Missiles SPRITE 16 DUP(<-1, -1,,,,, 1, OFFSET nuke_000>)
 
     ;; game state initialization
-    GameState BYTE 0
-    SincePause DWORD 0
-    SinceTurn DWORD 0
     KeyWait = 4
+    GameState DWORD 0
+    SincePause DWORD 0
+    SinceFire DWORD 0
+    CurrentMissile BYTE 0
 
 .CODE
 
@@ -68,8 +71,7 @@ UpdatePlayerAnimation PROC USES ebx
     ;; this procedure sets the next frame in the player's animation
     ;; cycles through the bitmaps in PlayerAnimation
 
-    xor eax, eax
-    mov al, AnimationFrame                  ;; get the current frame number
+    movzx eax, AnimationFrame               ;; get the current frame number
     inc eax                                 ;; set the next frame number
     cmp eax, 6                              ;; 6 = 2 * LENGTHOF PlayerAnimation (for 0.5x speed)
     jl updateFrame                          ;; if next frame number in range, update
@@ -174,7 +176,7 @@ do:
     INVOKE UpdateAsteroid, eax
     add ecx, SIZEOF SPRITE
 cond:
-    cmp ecx, AsteroidCount * SIZEOF SPRITE
+    cmp ecx, LENGTHOF Asteroids * SIZEOF SPRITE
     jl do
 
     ret
@@ -189,20 +191,89 @@ do:
     INVOKE RotateBlit, (SPRITE PTR [edi + ecx]).bitmap, (SPRITE PTR [edi + ecx]).xPos, (SPRITE PTR [edi + ecx]).yPos, (SPRITE PTR [edi + ecx]).angle
     add ecx, SIZEOF SPRITE
 cond:
-    cmp ecx, AsteroidCount * SIZEOF SPRITE
+    cmp ecx, LENGTHOF Asteroids * SIZEOF SPRITE
     jl do
 
     ret
 DrawAsteroids ENDP
 
-Fire PROC
+UpdateMissiles PROC USES ecx edi
+
+    xor ecx, ecx
+    mov edi, OFFSET Missiles
+    jmp cond
+do:
+    mov eax, (SPRITE PTR [edi + ecx]).xVel
+    adc eax, 7fffh
+    sar eax, 16                 ;; round missile's x velocity to nearest whole number
+    add (SPRITE PTR [edi + ecx]).xPos, eax        ;; add rounded x velocity to missile's x position
+
+    mov eax, (SPRITE PTR [edi + ecx]).yVel
+    adc eax, 7fffh
+    sar eax, 16                 ;; round missile's y velocity to nearest whole number
+    add (SPRITE PTR [edi + ecx]).yPos, eax        ;; add rounded y velocity to missile's x position
+    add ecx, SIZEOF SPRITE
+cond:
+    cmp ecx, LENGTHOF Missiles * SIZEOF SPRITE
+    jl do
+
+    ret
+UpdateMissiles ENDP
+
+DrawMissiles PROC USES ecx edi
+
+    xor ecx, ecx
+    mov edi, OFFSET Missiles
+    jmp cond
+do:
+    INVOKE BasicBlit, (SPRITE PTR [edi + ecx]).bitmap, (SPRITE PTR [edi + ecx]).xPos, (SPRITE PTR [edi + ecx]).yPos
+    add ecx, SIZEOF SPRITE
+cond:
+    cmp ecx, LENGTHOF Missiles * SIZEOF SPRITE
+    jl do
+
+    ret
+DrawMissiles ENDP
+
+Fire PROC USES ecx edx edi
+
+    movzx edi, CurrentMissile
+    mov eax, SIZEOF SPRITE
+    imul edi, eax
+    add edi, OFFSET Missiles
+
+    mov eax, Player.xPos
+    mov (SPRITE PTR [edi]).xPos, eax
+    mov eax, Player.yPos
+    mov (SPRITE PTR [edi]).yPos, eax
+
+    mov eax, Player.angle
+    sub eax, PI_HALF
+    INVOKE FixedCos, eax
+    mov edx, MissileSpeed
+    imul edx
+    shl edx, 16
+    shr eax, 16
+    or edx, eax
+    mov (SPRITE PTR [edi]).xVel, edx
+
+    mov eax, Player.angle
+    sub eax, PI_HALF
+    INVOKE FixedSin, eax
+    mov edx, MissileSpeed
+    imul edx
+    shl edx, 16
+    shr eax, 16
+    or edx, eax
+    mov (SPRITE PTR [edi]).yVel, edx
+
+    add CurrentMissile, 1
+    and CurrentMissile, 15
 
     ret
 Fire ENDP
 
 HandleControls PROC
-
-    inc SinceTurn
 
     cmp KeyPress, VK_W          ;; check if w key was pressed
     je up
@@ -213,38 +284,38 @@ HandleControls PROC
     cmp KeyPress, VK_S          ;; check if s key was pressed
     je down
 
-    cmp SinceTurn, KeyWait
-    jl updatePlayer
     cmp KeyPress, VK_LEFT       ;; check if left arrow key was pressed
     je rotateLeft
     cmp KeyPress, VK_RIGHT      ;; check if right arrow key was pressed
     je rotateRight
 
+    inc SinceFire
+    cmp SinceFire, KeyWait
+    jl updatePlayer
     cmp KeyPress, VK_SPACE      ;; check if space was pressed
     jne updatePlayer
+    mov SinceFire, 0
     INVOKE Fire
     jmp updatePlayer
 
 rotateRight:
     add Player.angle, PlayerRotation     ;; if right arrow key was pressed, subtract from player's angle
-    mov SinceTurn, 0
     jmp updatePlayer
 rotateLeft:
     sub Player.angle, PlayerRotation     ;; if left arrow key was pressed, add to player's angle
-    mov SinceTurn, 0
     jmp updatePlayer
 
 down:
-    add Player.yVel, 0f000h     ;; if s was pressed, add to player's y velocity
+    add Player.yVel, PlayerSpeed     ;; if s was pressed, add to player's y velocity
     jmp updatePlayer
 up:
-    sub Player.yVel, 0f000h     ;; if w was pressed, subtract from player's y velocity
+    sub Player.yVel, PlayerSpeed     ;; if w was pressed, subtract from player's y velocity
     jmp updatePlayer
 right:
-    add Player.xVel, 0f000h     ;; if d was pressed, add to player's x velocity
+    add Player.xVel, PlayerSpeed     ;; if d was pressed, add to player's x velocity
     jmp updatePlayer
 left:
-    sub Player.xVel, 0f000h     ;; if a was pressed, subtract from player's x velocity
+    sub Player.xVel, PlayerSpeed     ;; if a was pressed, subtract from player's x velocity
 
 updatePlayer:
     mov eax, Player.xVel
@@ -260,6 +331,7 @@ updatePlayer:
     mov eax, OFFSET Player
     INVOKE HandleOutOfBounds, eax
 
+returnControls:
     ret
 HandleControls ENDP
 
@@ -318,7 +390,6 @@ HandleIntersections PROC
 HandleIntersections ENDP
 
 
-
 GamePlay PROC
 
     INVOKE HandlePause
@@ -334,10 +405,12 @@ GamePlay PROC
     INVOKE HandleControls               ;; handle any input from user
     INVOKE UpdatePlayerAnimation
     INVOKE UpdateAsteroids
+    INVOKE UpdateMissiles
 
 sprites:                                ;; draw Asteroid and Player sprites
     INVOKE RotateBlit, Player.bitmap, Player.xPos, Player.yPos, Player.angle
     INVOKE DrawAsteroids
+    INVOKE DrawMissiles
 
 returnGamePlay:
     ret         ;; Do not delete this line!!!
