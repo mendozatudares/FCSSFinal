@@ -39,13 +39,14 @@ includelib \masm32\lib\winmm.lib
     AnimationFrame BYTE 0           ;; current frame for player animation
 
     ;; asteroid initialization
-    AsteroidSpeed = 800h            ;; asteroid acceleration
+    AsteroidSpeed = 1000h           ;; asteroid acceleration
     ;; array of asteroids to work with, initially all valid
     Asteroids SPRITE <430, 67,  51471/2,,, 1000h,, OFFSET asteroid_000>,
                      <75,  212, 51471,,,   2000h,, OFFSET asteroid_000>,
                      <3,   254, 51471*2,,, 1000h,, OFFSET asteroid_000>,
                      <480, 304, 51471*3,,, 1000h,, OFFSET asteroid_000>,
-                     <580, 100, 51471*3,,, 1000h,, OFFSET asteroid_000>
+                     <580, 100, 51471*3,,, 1000h,, OFFSET asteroid_000>,
+                     <211, 211, 51471*3,,, 3000h,, OFFSET asteroid_000>
 
     ;; missiles initialization
     PI_HALF = 102943                ;; PI / 2 constant
@@ -67,6 +68,8 @@ includelib \masm32\lib\winmm.lib
     LoserString BYTE "GAME OVER", 0
     MissleSound BYTE "laser_shot_1.wav", 0
     PlayerSound BYTE "explosion_8.wav", 0
+    PauseSound  BYTE "coin_5.wav", 0
+    WinnerSound BYTE "coin_11.wav", 0
 
 .CODE
 
@@ -84,12 +87,15 @@ BlankScreen ENDP
 
 HandlePause PROC
 
+    test GameState, 2           ;; check if game is over
+    jne returnPause             ;; if so, do nothing
     cmp KeyPress, VK_P          ;; check if key was pressed
     jne notPressed              ;; if not, enable pausing
     cmp CanPause, 1             ;; check if pausing enabled
     jne returnPause             ;; if p presssed but pausing not enabled, just return
     mov CanPause, 0             ;; if p pressed and can pause, disable pausing
     xor GameState, 1            ;; cycle pause state
+    INVOKE PlaySound, OFFSET PauseSound, 0, SND_ASYNC ;; play pausing sound
     jmp returnPause             ;; return
 
 notPressed:
@@ -100,6 +106,9 @@ HandlePause ENDP
 
 HandleWin PROC
 
+    
+    cmp Player.state, 0         ;; check if player is still valid
+    jne returnHandleWin         ;; player is not valid, we did not win
     xor ecx, ecx                ;; start at index 0
     mov edi, OFFSET Asteroids   ;; get starting address of asteroids array
     jmp cond
@@ -115,6 +124,7 @@ cond:
     or GameState, 2             ;; done with loop, all asteroids invalid, we win
     ;; display you win text
     INVOKE DrawStr, OFFSET WinnrString, 285, 240, 255
+    INVOKE PlaySound, OFFSET WinnerSound, 0, SND_ASYNC
 
 returnHandleWin:
     ret
@@ -554,8 +564,8 @@ GamePlay PROC
     INVOKE UpdateMissiles               ;; update and draw missiles
     INVOKE UpdateAsteroids              ;; update and draw asteroids
 
-    INVOKE HandleWin                    ;; check if player has won
     INVOKE HandleLose                   ;; check if player has lost
+    INVOKE HandleWin                    ;; check if player has won
     INVOKE HandleIntersections          ;; handle any collisions
 
 returnGamePlay:
@@ -564,6 +574,7 @@ GamePlay ENDP
 
 GameInit PROC
 
+    INVOKE PlaySound, OFFSET WinnerSound, 0, SND_ASYNC
     INVOKE DrawStr, OFFSET StartString, 220, 200, 255
     INVOKE DrawStr, OFFSET InstrString, 80, 300, 255
 
